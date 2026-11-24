@@ -70,6 +70,20 @@ export function maxCopiesSheet(photo, cutLines = true) {
   return { canvas: c, copies: cells.length };
 }
 
+/** Mixed sheet like the reference: 3 x 2x2 in down the left, 4 x 35x45 mm sideways down the right */
+export function comboSheet(usPhoto, euPhoto, cutLines = true) {
+  const { c, g } = newSheet();
+  const leftW = usPhoto.width;
+  const usCells = [0, 1, 2].map((r) => ({ x: 0, y: r * usPhoto.height, rot: false }));
+  if (leftW + euPhoto.height > SHEET_W || 3 * usPhoto.height > SHEET_H || 4 * euPhoto.width > SHEET_H)
+    throw new Error("These sizes don't fit together on 4x6 paper.");
+  place(g, usPhoto, usCells, 0, Math.floor((SHEET_H - 3 * usPhoto.height) / 2), cutLines);
+  const euCells = [0, 1, 2, 3].map((r) => ({ x: 0, y: r * euPhoto.width, rot: true }));
+  const ox = leftW + Math.floor((SHEET_W - leftW - euPhoto.height) / 2), oy = Math.floor((SHEET_H - 4 * euPhoto.width) / 2);
+  place(g, euPhoto, euCells, ox, oy, cutLines);
+  return { canvas: c, copies: 7 };
+}
+
 /** 4 copies on top, coupon image (HTMLImageElement/ImageBitmap or null) underneath */
 export function couponSheet(photo, coupon, copies = 4, cutLines = true) {
   const w = photo.width, h = photo.height;

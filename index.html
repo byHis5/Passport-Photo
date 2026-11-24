@@ -77,12 +77,13 @@
 
     <div class="card">
       <h2><span class="step">5</span> Special instructions</h2>
-      <textarea id="instruction" rows="3" placeholder="e.g. remove the earrings and nose ring, straighten the head, a bit brighter"></textarea>
+      <textarea id="instruction" rows="3" placeholder="e.g. remove jewelry, a bit brighter, move up"></textarea>
       <div class="row gap">
         <button class="btn primary" id="aiApply">Apply instructions</button>
         <button class="btn" id="aiCheck" title="Ask Claude to review the photo against the passport rules">Check photo</button>
       </div>
       <div id="aiResult" class="ai-result" hidden></div>
+      <p class="muted small" id="aiHint">Works without an API key for: remove jewelry / necklace / earrings / nose ring, brighter, darker, warmer, cooler, smoother skin, remove spots, straighten, rotate left 2, bigger, smaller, move up / down / left / right, reset. With a Claude API key (⚙ Settings) you can type anything.</p>
     </div>
   </section>
 
@@ -114,6 +115,7 @@
       <button class="btn primary block" id="dlSingle" disabled>⬇ Single photo (JPG, for email)</button>
       <button class="btn primary block" id="dlMax" disabled>🖨 4×6 sheet – max copies</button>
       <button class="btn primary block" id="dlCoupon" disabled>🖨 4×6 sheet – 4 copies + coupon</button>
+      <button class="btn primary block" id="dlCombo" disabled title="Same photo in two sizes on one sheet">🖨 4×6 sheet – 3 × 2×2 in + 4 × 35×45 mm</button>
       <label class="check"><input type="checkbox" id="cutLines" checked> Thin cut lines</label>
       <p class="muted small">All files are 300 dpi JPG. Print the 4×6 sheet borderless at 100% / "actual size".</p>
       <div id="sheetPreview" class="sheet-preview" hidden>

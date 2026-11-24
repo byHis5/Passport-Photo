@@ -131,6 +131,98 @@ function cleanAlpha(a) {
   return a;
 }
 
+// Snap the (low-res, blurry) model mask to real edges in the full photo with a fast guided filter,
+// then make it fully solid inside the person and fully clear well outside.
+function refineAlpha(rgb, alpha) {
+  const t = tracker();
+  const W = rgb.cols, H = rgb.rows, s = Math.min(1, 900 / Math.max(W, H));
+  const sw = Math.max(1, Math.round(W * s)), sh = Math.max(1, Math.round(H * s));
+  const grayF = t(new cv.Mat()); { const g = t(new cv.Mat()); cv.cvtColor(rgb, g, cv.COLOR_RGB2GRAY); g.convertTo(grayF, cv.CV_32F, 1 / 255); }
+  const aF = t(new cv.Mat()); alpha.convertTo(aF, cv.CV_32F, 1 / 255);
+  const I = t(new cv.Mat()), Pm = t(new cv.Mat());
+  cv.resize(grayF, I, new cv.Size(sw, sh), 0, 0, cv.INTER_AREA); cv.resize(aF, Pm, new cv.Size(sw, sh), 0, 0, cv.INTER_AREA);
+  const r = Math.max(3, Math.round(Math.max(sw, sh) * 0.008)), ks = new cv.Size(2 * r + 1, 2 * r + 1), eps = 1e-3;
+  const box = (src) => { const d = t(new cv.Mat()); cv.boxFilter(src, d, -1, ks); return d; };
+  const mul = (x, y) => { const d = t(new cv.Mat()); cv.multiply(x, y, d); return d; };
+  const mI = box(I), mP = box(Pm), mIP = box(mul(I, Pm)), mII = box(mul(I, I));
+  const A = t(new cv.Mat(sh, sw, cv.CV_32F)), Bm = t(new cv.Mat(sh, sw, cv.CV_32F));
+  for (let i = 0; i < sw * sh; i++) {
+    const mi = mI.data32F[i], varI = mII.data32F[i] - mi * mi, cov = mIP.data32F[i] - mi * mP.data32F[i];
+    const a = cov / (varI + eps); A.data32F[i] = a; Bm.data32F[i] = mP.data32F[i] - a * mi;
+  }
+  const mA = box(A), mB = box(Bm);
+  const fA = t(new cv.Mat()), fB = t(new cv.Mat());
+  cv.resize(mA, fA, new cv.Size(W, H), 0, 0, cv.INTER_LINEAR); cv.resize(mB, fB, new cv.Size(W, H), 0, 0, cv.INTER_LINEAR);
+  // solid core / clear outside, from the model mask
+  const bin = t(new cv.Mat()); cv.threshold(alpha, bin, 127, 255, cv.THRESH_BINARY);
+  const kk = Math.max(5, Math.round(Math.max(W, H) * 0.02)) | 1;
+  const se = t(cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(kk, kk)));
+  const core = t(new cv.Mat()), reach = t(new cv.Mat()); cv.erode(bin, core, se); cv.dilate(bin, reach, se);
+  const out = new cv.Mat(H, W, cv.CV_8UC1);
+  for (let i = 0; i < W * H; i++) {
+    let q = fA.data32F[i] * grayF.data32F[i] + fB.data32F[i];
+    q = (q - 0.1) / 0.8;                              // stretch: faint haze -> 0, near-solid -> 1
+    if (core.data[i]) q = 1; else if (!reach.data[i]) q = 0;
+    out.data[i] = q <= 0 ? 0 : q >= 1 ? 255 : Math.round(q * 255);
+  }
+  alpha.delete(); t.free();
+  return out;
+}
+
+// Smooth estimate of what the background looked like behind every pixel (from nearby background pixels)
+function estimateBackground(rgb, alpha) {
+  const t = tracker();
+  const W = rgb.cols, H = rgb.rows, s = Math.min(1, 360 / Math.max(W, H));
+  const sw = Math.max(1, Math.round(W * s)), sh = Math.max(1, Math.round(H * s));
+  const small = t(new cv.Mat()), as = t(new cv.Mat());
+  cv.resize(rgb, small, new cv.Size(sw, sh), 0, 0, cv.INTER_AREA); cv.resize(alpha, as, new cv.Size(sw, sh), 0, 0, cv.INTER_AREA);
+  const num = t(new cv.Mat(sh, sw, cv.CV_32FC3)), den = t(new cv.Mat(sh, sw, cv.CV_32F));
+  let gr = 0, gg = 0, gb = 0, gn = 0;
+  for (let i = 0, p = 0; i < sw * sh; i++, p += 3) {
+    const u = 1 - as.data[i] / 255, w = u * u * u * u;          // only trust clear background
+    den.data32F[i] = w;
+    for (let c = 0; c < 3; c++) num.data32F[p + c] = small.data[p + c] * w;
+    if (w > 0.9) { gr += small.data[p]; gg += small.data[p + 1]; gb += small.data[p + 2]; gn++; }
+  }
+  const sig = Math.max(3, Math.max(sw, sh) * 0.05);
+  const nB = t(new cv.Mat()), dB = t(new cv.Mat());
+  cv.GaussianBlur(num, nB, new cv.Size(0, 0), sig); cv.GaussianBlur(den, dB, new cv.Size(0, 0), sig);
+  const g = gn ? [gr / gn, gg / gn, gb / gn] : [255, 255, 255];
+  const est = t(new cv.Mat(sh, sw, cv.CV_8UC3));
+  for (let i = 0, p = 0; i < sw * sh; i++, p += 3) {
+    const d = dB.data32F[i], k = Math.min(1, d / 0.02);           // far inside the person: fall back to average background
+    for (let c = 0; c < 3; c++) est.data[p + c] = Math.round(d > 1e-6 ? (nB.data32F[p + c] / d) * k + g[c] * (1 - k) : g[c]);
+  }
+  const full = new cv.Mat(); cv.resize(est, full, new cv.Size(W, H), 0, 0, cv.INTER_LINEAR);
+  t.free();
+  return full;
+}
+
+// Pixels near the outline whose colour matches the background behind them are background: clear them.
+// Covers soft edges and pockets of wall showing between curls / under clips that the model counted as person.
+function cleanEdgeAlpha(rgb, alpha, bgEst) {
+  const t = tracker();
+  const W = rgb.cols, H = rgb.rows;
+  const bin = t(new cv.Mat()); cv.threshold(alpha, bin, 127, 255, cv.THRESH_BINARY);
+  const k = Math.max(7, Math.round(Math.max(W, H) * 0.06)) | 1;
+  const se = t(cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(k, k)));
+  const deep = t(new cv.Mat()); cv.erode(bin, deep, se);
+  const D = rgb.data, B = bgEst.data, A = alpha.data, DP = deep.data;
+  for (let i = 0, p = 0; i < A.length; i++, p += 3) {
+    const a = A[i]; if (a === 0 || DP[i]) continue;
+    const d = Math.hypot(D[p] - B[p], D[p + 1] - B[p + 1], D[p + 2] - B[p + 2]);
+    if (d < 34) A[i] = Math.round(a * Math.max(0, (d - 10) / 24));
+  }
+  // choke: pull the outline in ~1-2 px so no rim of the old background survives
+  const iters = Math.max(1, Math.round(Math.max(W, H) / 1000));
+  const k3 = t(cv.Mat.ones(3, 3, cv.CV_8U));
+  cv.erode(alpha, alpha, k3, new cv.Point(-1, -1), iters);
+  // tidy: drop specks left floating in the background
+  const cleaned = cleanAlpha(alpha);
+  t.free();
+  return cleaned;
+}
+
 function bodyEdge(alpha) {
   // number of 90deg clockwise turns so the shoulders (widest mask part) sit at the bottom
   const h = alpha.rows, w = alpha.cols, A = alpha.data, bh = Math.max(1, h >> 3), bw = Math.max(1, w >> 3);
@@ -164,8 +256,11 @@ export async function analyze(blob, quarterTurns = null) {
   let alpha = await personMask(rgb);
   const k = quarterTurns === null ? bodyEdge(alpha) : ((quarterTurns % 4) + 4) % 4;
   rgb = rotateQuarter(rgb, k); alpha = rotateQuarter(alpha, k);
+  alpha = refineAlpha(rgb, alpha);
+  const bgEst = estimateBackground(rgb, alpha);
+  alpha = cleanEdgeAlpha(rgb, alpha, bgEst);
   let found;
-  try { found = detectLandmarks(rgb); } catch (e) { rgb.delete(); alpha.delete(); throw e; }
+  try { found = detectLandmarks(rgb); } catch (e) { rgb.delete(); alpha.delete(); bgEst.delete(); throw e; }
   const { lm, n } = found;
   const xs = FACE_OVAL.map((i) => lm[i][0]);
   const faceW = Math.max(...xs) - Math.min(...xs);
@@ -173,12 +268,12 @@ export async function analyze(blob, quarterTurns = null) {
   if (k && quarterTurns === null) warnings.push(`Photo was sideways/upside-down - auto-rotated ${k * 90}°.`);
   if (n > 1) warnings.push("More than one face found - using the largest one.");
   if (faceW < 180) warnings.push("Face is small in this photo; print quality may be low. Move the camera closer.");
-  return { rgb, alpha, lm, faceW, warnings, quarterTurns: k, crownCache: new Map() };
+  return { rgb, alpha, bgEst, lm, faceW, warnings, quarterTurns: k, crownCache: new Map() };
 }
 
 export function freeAnalysis(a) {
   if (!a) return;
-  a.rgb.delete(); a.alpha.delete(); if (a.skin) a.skin.delete();
+  a.rgb.delete(); a.alpha.delete(); a.bgEst.delete(); if (a.skin) a.skin.delete();
   if (a.blemishBase) Object.values(a.blemishBase).forEach((m) => m.delete());
 }
 
@@ -364,11 +459,14 @@ export function prepare(a, s, healMask) {
   const note = skinExposure(img, roi, sm, a.alpha, s.darkSkin); lap("exposure");
   if (note) notes.push(note);
   if (s.removeBg) {
-    const al = t(new cv.Mat()); cv.GaussianBlur(a.alpha, al, new cv.Size(0, 0), 0.8);
-    const D = img.data, A = al.data;
+    // matting equation: pixel = a*person + (1-a)*background  ->  swap the background part for pure white.
+    // This also removes the old background's colour from hair and edge pixels (no blue/green fringe).
+    const D = img.data, A = a.alpha.data, B = a.bgEst.data;
     for (let i = 0, p = 0; i < A.length; i++, p += 3) {
-      const w = A[i] / 255; if (w === 1) continue;
-      D[p] = D[p] * w + 255 * (1 - w); D[p + 1] = D[p + 1] * w + 255 * (1 - w); D[p + 2] = D[p + 2] * w + 255 * (1 - w);
+      const al = A[i]; if (al === 255) continue;
+      if (al === 0) { D[p] = D[p + 1] = D[p + 2] = 255; continue; }
+      const u = 1 - al / 255;
+      for (let c = 0; c < 3; c++) D[p + c] = Math.max(0, Math.min(255, D[p + c] + u * (255 - B[p + c])));
     }
   }
   if (healMask) {

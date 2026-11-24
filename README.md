@@ -12,16 +12,22 @@ A web page that turns a customer photo into a print-ready passport photo. **Ever
 1. **Upload** a photo (drag & drop, click, or Ctrl+V paste). Sideways or upside-down photos are turned upright automatically. Use ⟲ / ⟳ if one isn't.
 2. **Choose the document.** United States Passport is the default and first in the list, followed by more than 200 country and document sizes. Type to search.
 3. **Retouch** (automatic, adjustable):
-   * White background
+   * White background. The person's outline is snapped to the real edges, and any colour from the old background in the hair and along the edges is replaced with white, so no coloured fringe is left.
    * Slight airbrush, on skin only. Eyes, lips, brows, beards and hair are left alone, and texture is kept.
    * Slight blemish fix
    * Dark-skin exposure. *Auto* gently lifts a dark face so the features read clearly, without changing the skin tone. It can also be set to *Always on* or *Off*.
 4. **Position.** The head is auto-straightened, then sized and placed to the country's head-height and eye-height rules. Guide lines and ✓/✗ measurements show the result.
-5. **Special instructions.** Type e.g. *"remove the earrings and nose ring, straighten the head"*. Claude (AI) adjusts the photo, erases the jewelry, and tells you what it can't fix. **Check photo** reviews the photo against passport rules. The **heal brush** paints out spots by hand, and **Undo heal** reverts.
+5. **Special instructions.**
+   * **Without an API key**, quick commands work on this computer for free: *remove jewelry*, *remove necklace*, *remove earrings*, *remove nose ring*, *brighter*, *darker*, *warmer*, *cooler*, *smoother skin*, *remove spots*, *straighten*, *rotate left 2*, *bigger*, *smaller*, *move up / down / left / right*, *reset*. You can combine them: "remove jewelry, a bit brighter, move up".
+     * Jewelry is found automatically. The app looks for metal-coloured things (gold, silver, white) lying on bare skin at the neck, earlobes and nose, and erases them. Clothing is never touched.
+     * Jewelry on top of clothing, or dark jewelry, isn't found. Paint over it with the heal brush.
+   * **With a Claude API key** (⚙ Settings) you can type anything, e.g. *"head is still tilted, straighten it"*, and **Check photo** gives an AI passport-rule review.
+   * The **heal brush** paints out spots by hand, and **Undo heal** reverts.
 6. **Output**: 300 dpi JPG
    * **Single photo**, for emailing.
    * **4×6 sheet, max copies**: 6 for US 2×2, 8 for 35×45 mm, 9 for China.
    * **4×6 sheet, 4 copies + coupon**: a random coupon goes underneath. *Different coupon* picks another.
+   * **4×6 sheet, 3 × 2×2 in + 4 × 35×45 mm**: the same photo in both sizes on one sheet. It uses the selected document if it's one of those sizes, otherwise US passport and the 35×45 mm standard (head 32–36 mm).
 
 ## Hosting (free)
 
@@ -75,6 +81,7 @@ index.html, style.css     the page
 js/processing.js          face landmarks, background removal, retouch, straighten + crop
 js/layout.js              4x6 sheet packing, coupons
 js/ai.js                  Claude vision -> edit plan
+js/commands.js            quick commands + automatic jewelry finder (no API key)
 js/app.js                 UI
 sw.js                     offline cache + multi-threading headers
 data/countries.json       passport sizes

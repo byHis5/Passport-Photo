@@ -2,6 +2,7 @@
 import * as P from "./processing.js";
 import * as L from "./layout.js";
 import * as AI from "./ai.js";
+import * as Q from "./commands.js";
 
 const $ = (id) => document.getElementById(id);
 const MM = P.DPI / 25.4;
@@ -148,7 +149,7 @@ function show(r) {
   const c = $("photo"); c.width = r.W; c.height = r.H; c.getContext("2d").drawImage(r.canvas, 0, 0);
   $("frame").style.setProperty("--ar", (r.W / r.H).toFixed(4));
   drawOverlay();
-  ["dlSingle", "dlMax", "dlCoupon"].forEach((b) => ($(b).disabled = false));
+  ["dlSingle", "dlMax", "dlCoupon", "dlCombo"].forEach((b) => ($(b).disabled = false));
   $("dlMax").textContent = `🖨 4×6 sheet – max copies (${L.maxCopiesFor(r.W, r.H)})`;
   $("healUndo").disabled = !state.heal.length;
   const m = r.meas, ok = (b) => (b ? "ok" : "bad");
@@ -219,7 +220,7 @@ async function runAI(check) {
   if (!state.last) return toast("Upload a photo first", true);
   const instr = check ? "" : $("instruction").value;
   if (!check && !instr.trim()) return toast("Type an instruction first", true);
-  if (!AI.getKey()) { $("settings").showModal(); return toast("Add your Claude API key first", true); }
+  if (!AI.getKey()) return runLocal(check, instr);
   const box = $("aiResult"); box.hidden = false; box.className = "ai-result"; box.textContent = "Claude is looking at the photo…";
   $("aiApply").disabled = $("aiCheck").disabled = true; busy(true);
   try {
@@ -242,6 +243,55 @@ async function runAI(check) {
   } finally { $("aiApply").disabled = $("aiCheck").disabled = false; busy(false); }
 }
 
+// ---------------------------------------------------------------- quick commands (no API key)
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const LIM = { rotate: [-15, 15], zoom: [0.85, 1.15], shift_x: [-15, 15], shift_y: [-15, 15], brightness: [-50, 50],
+  contrast: [-50, 50], saturation: [-50, 50], warmth: [-50, 50], airbrush: [0, 100], blemish: [0, 100] };
+const NAMES = { necklace: "necklace", earrings: "earrings", nose: "nose jewelry" };
+
+async function runLocal(check, instr) {
+  const box = $("aiResult"); box.hidden = false; box.className = "ai-result";
+  if (check) {
+    const r = state.last, m = r.meas, probs = [...r.warnings];
+    let html = `<div>Automatic check: head ${m.head_mm} mm ${m.head_ok ? "✓" : "✗"}` + (m.eye_ok === null ? "" : `, eyes ${m.eye_mm} mm ${m.eye_ok ? "✓" : "✗"}`) + `.</div>`;
+    html += probs.length ? `<ul>${probs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="small" style="color:var(--ok)">No problems found by the automatic checks.</div>`;
+    html += `<div class="small muted">Also check by eye: no glasses, neutral expression, eyes open, no shadows, nothing covering the face. (Add a Claude API key in ⚙ Settings for an AI review.)</div>`;
+    box.innerHTML = html; return;
+  }
+  const cmd = Q.parse(instr);
+  const done = [];
+  if (cmd.reset) { resetAdjust(false); $("airbrush").value = 35; $("blemish").value = 50; done.push("Reset position and tone"); }
+  for (const [k, v] of Object.entries(cmd.add)) {
+    const el = $(k); if (!el) continue;
+    const [lo, hi] = LIM[k]; el.value = Math.min(hi, Math.max(lo, +el.value + v));
+  }
+  if ("auto_straighten" in cmd.set) { $("autoStraighten").checked = true; $("rotate").value = 0; }
+  if ("shift_x" in cmd.set) $("shift_x").value = 0;
+  syncOutputs();
+  const adjusted = Object.keys(cmd.add).length || Object.keys(cmd.set).length;
+  if (adjusted) done.push("Adjusted: " + [...Object.keys(cmd.add), ...Object.keys(cmd.set)].map((k) => k.replace("_", " ").replace("auto straighten", "straightened")).join(", "));
+  const notFound = [];
+  if (cmd.remove.size) {
+    busy(true); await nextFrame();
+    try {
+      const { mask, found } = Q.findJewelry(state.a, cmd.remove);
+      const cv = P.getCv();
+      if (cv.countNonZero(mask)) state.heal.push(mask); else mask.delete();
+      const got = [...cmd.remove].filter((k) => found[k]);
+      if (got.length) done.push("Removed " + got.map((k) => NAMES[k]).join(", "));
+      [...cmd.remove].filter((k) => !found[k]).forEach((k) => notFound.push(k));
+    } finally { busy(false); }
+  }
+  await renderNow();
+  let html = done.length ? `<div>${done.map(esc).join(". ")}.</div>` : "";
+  if (cmd.remove.size && done.some((d) => d.startsWith("Removed"))) html += `<div class="small muted">Check the result. Undo heal reverts it; the heal brush cleans up anything left.</div>`;
+  if (notFound.length) html += `<div class="small">No ${notFound.map((k) => NAMES[k]).join(" or ")} found on bare skin – if there is some, paint over it with the <b>Heal brush</b>.</div>`;
+  if (cmd.notes.length) html += `<b>Can't do by editing:</b><ul>${cmd.notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  if (cmd.unknown.length) html += `<div class="small">Didn't understand: “${cmd.unknown.map(esc).join("”, “")}”.</div><div class="small muted">${esc(Q.HELP)}</div>`;
+  if (!html) html = `<div class="small muted">${esc(Q.HELP)}</div>`;
+  box.innerHTML = html;
+}
+
 // ---------------------------------------------------------------- downloads
 const stamp = () => { const d = new Date(), z = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`; };
 const safe = (s) => s.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_|_$/g, "") || "photo";
@@ -255,10 +305,32 @@ async function downloadSingle() {
   const r = state.last; if (!r) return;
   save(await P.canvasToJpeg(r.canvas), `passport_${safe(r.spec.country)}_${stamp()}.jpg`);
 }
+// the same photo rendered at another document size (same retouch and adjustments)
+function renderAt(spec) {
+  ensurePrepared();
+  const r = P.render(state.a, state.prep, spec, adjust());
+  const canvas = P.matToCanvas(r.img); r.img.delete();
+  return canvas;
+}
+const sizeIs = (s, w, h) => Math.abs(s.width_mm - w) < 0.3 && Math.abs(s.height_mm - h) < 0.3;
+
 async function downloadSheet(mode) {
   const r = state.last; if (!r) return;
   try {
     let res, couponName = null;
+    if (mode === "combo") {
+      // use the selected document when it already is that size, otherwise US passport / ICAO 35x45 standard
+      const cur = r.spec;
+      const us = sizeIs(cur, 50.8, 50.8) ? cur : state.countries[0];
+      const eu = sizeIs(cur, 35, 45) ? cur : state.countries.find((c) => c.id === "schengen-area-visa") ||
+        { id: "icao", country: "Standard", document: "35x45", width_mm: 35, height_mm: 45, head_min_mm: 32, head_max_mm: 36, eye_min_mm: null, eye_max_mm: null };
+      res = await work(() => L.comboSheet(us === cur ? r.canvas : renderAt(us), eu === cur ? r.canvas : renderAt(eu), $("cutLines").checked));
+      const blob = await P.canvasToJpeg(res.canvas);
+      save(blob, `print4x6_3x2in_4x35x45_${stamp()}.jpg`);
+      $("sheetPreview").hidden = false; $("sheetImg").src = URL.createObjectURL(blob);
+      $("sheetInfo").textContent = `3 × 2×2 in (${us.country}) + 4 × 35×45 mm (${eu.country})`; $("reshuffle").hidden = true;
+      return;
+    }
     if (mode === "coupon") {
       const c = await L.pickCoupon(state.coupons);
       res = L.couponSheet(r.canvas, c && c.img, 4, $("cutLines").checked); couponName = c && c.name;
@@ -289,7 +361,7 @@ async function loadCoupons() {
 // ---------------------------------------------------------------- AI status / settings
 function updateAiChip() {
   const has = !!AI.getKey(), c = $("aiStatus");
-  c.textContent = has ? "AI instructions: ready" : "AI instructions: add API key"; c.className = "chip " + (has ? "ok" : "bad");
+  c.textContent = has ? "AI instructions: on" : "Quick commands (no AI key)"; c.className = "chip " + (has ? "ok" : "");
 }
 
 // ---------------------------------------------------------------- wiring
@@ -319,6 +391,7 @@ function init() {
   $("dlMax").addEventListener("click", () => downloadSheet("max"));
   $("dlCoupon").addEventListener("click", () => downloadSheet("coupon"));
   $("reshuffle").addEventListener("click", () => downloadSheet("coupon"));
+  $("dlCombo").addEventListener("click", () => downloadSheet("combo"));
   $("couponFiles").addEventListener("change", async (e) => {
     try { const n = await L.addCoupons([...e.target.files]); toast(`Added ${n} coupon(s)`); loadCoupons(); } catch (err) { toast(err.message, true); }
     e.target.value = "";
