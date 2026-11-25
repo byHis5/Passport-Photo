@@ -324,7 +324,7 @@ async function downloadSheet(mode) {
       const us = sizeIs(cur, 50.8, 50.8) ? cur : state.countries[0];
       const eu = sizeIs(cur, 35, 45) ? cur : state.countries.find((c) => c.id === "schengen-area-visa") ||
         { id: "icao", country: "Standard", document: "35x45", width_mm: 35, height_mm: 45, head_min_mm: 32, head_max_mm: 36, eye_min_mm: null, eye_max_mm: null };
-      res = await work(() => L.comboSheet(us === cur ? r.canvas : renderAt(us), eu === cur ? r.canvas : renderAt(eu), $("cutLines").checked));
+      res = await work(() => L.comboSheet(us === cur ? r.canvas : renderAt(us), eu === cur ? r.canvas : renderAt(eu), $("cutLines").checked, $("cutMarks").checked));
       const blob = await P.canvasToJpeg(res.canvas);
       save(blob, `print4x6_3x2in_4x35x45_${stamp()}.jpg`);
       $("sheetPreview").hidden = false; $("sheetImg").src = URL.createObjectURL(blob);
@@ -333,8 +333,8 @@ async function downloadSheet(mode) {
     }
     if (mode === "coupon") {
       const c = await L.pickCoupon(state.coupons);
-      res = L.couponSheet(r.canvas, c && c.img, 4, $("cutLines").checked); couponName = c && c.name;
-    } else res = L.maxCopiesSheet(r.canvas, $("cutLines").checked);
+      res = L.couponSheet(r.canvas, c && c.img, 4, $("cutLines").checked, $("cutMarks").checked); couponName = c && c.name;
+    } else res = L.maxCopiesSheet(r.canvas, $("cutLines").checked, $("cutMarks").checked);
     const blob = await P.canvasToJpeg(res.canvas);
     save(blob, `print4x6_${safe(r.spec.country)}_${res.copies}x_${stamp()}.jpg`);
     $("sheetPreview").hidden = false; $("sheetImg").src = URL.createObjectURL(blob);

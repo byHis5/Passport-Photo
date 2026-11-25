@@ -67,51 +67,88 @@ function newSheet() {
   return { c, g };
 }
 
+/** draws the photos; returns their rectangles [{x,y,w,h}] on the sheet */
 function place(g, photo, cells, ox, oy, cutLines) {
-  const w = photo.width, h = photo.height;
+  const w = photo.width, h = photo.height, rects = [];
   g.lineWidth = 1; g.strokeStyle = CUT;
   for (const { x, y, rot } of cells) {
     if (rot) {   // head pointing left, like the reference sheets
       g.save(); g.translate(ox + x, oy + y + w); g.rotate(-Math.PI / 2); g.drawImage(photo, 0, 0); g.restore();
     } else g.drawImage(photo, ox + x, oy + y);
-    if (cutLines) { const cw = rot ? h : w, ch = rot ? w : h; g.strokeRect(ox + x + 0.5, oy + y + 0.5, cw - 1, ch - 1); }
+    const cw = rot ? h : w, ch = rot ? w : h;
+    if (cutLines) g.strokeRect(ox + x + 0.5, oy + y + 0.5, cw - 1, ch - 1);
+    rects.push({ x: ox + x, y: oy + y, w: cw, h: ch });
   }
+  return rects;
+}
+
+// Cut marks for lining the sheet up on a cutting board: every cut line gets a short tick at both paper
+// edges, and faint dashes wherever it runs through blank paper (never over the photos).
+const MARK = "rgb(205,205,205)", TICK = 40, DASH = [14, 10];
+function cutMarks(g, photoRects, otherRects = []) {
+  const xs = new Set(), ys = new Set();
+  for (const r of photoRects) {
+    [r.x, r.x + r.w].forEach((v) => { if (v > 0 && v < SHEET_W) xs.add(v); });
+    [r.y, r.y + r.h].forEach((v) => { if (v > 0 && v < SHEET_H) ys.add(v); });
+  }
+  const all = [...photoRects, ...otherRects];
+  // is this point on a photo (or on the seam between two photos)?
+  const covered = (x, y) => all.some((r) => x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2);
+  g.save(); g.strokeStyle = MARK; g.lineWidth = 2; g.lineCap = "butt";
+  const seg = (x0, y0, x1, y1) => { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
+  for (const x of xs) {
+    seg(x, 0, x, TICK); seg(x, SHEET_H - TICK, x, SHEET_H);                       // edge ticks
+    for (let y = TICK + 6; y < SHEET_H - TICK - 6; y += DASH[0] + DASH[1]) {        // dashes on blank paper
+      const y1 = Math.min(y + DASH[0], SHEET_H - TICK - 6);
+      if (!covered(x, y) && !covered(x, y1)) seg(x, y, x, y1);
+    }
+  }
+  for (const y of ys) {
+    seg(0, y, TICK, y); seg(SHEET_W - TICK, y, SHEET_W, y);
+    for (let x = TICK + 6; x < SHEET_W - TICK - 6; x += DASH[0] + DASH[1]) {
+      const x1 = Math.min(x + DASH[0], SHEET_W - TICK - 6);
+      if (!covered(x, y) && !covered(x1, y)) seg(x, y, x1, y);
+    }
+  }
+  g.restore();
 }
 
 /** photo: canvas at print size. returns {canvas, copies} */
-export function maxCopiesSheet(photo, cutLines = true) {
+export function maxCopiesSheet(photo, cutLines = true, marks = true) {
   const cells = pack(SHEET_W, SHEET_H, photo.width, photo.height);
   if (!cells.length) throw new Error("Photo is larger than 4x6 paper.");
   // photos touch each other and the top-left corner: straight cuts right across the sheet,
   // paper edges count as cuts, and all waste is one strip on the right / bottom
   const { c, g } = newSheet();
-  place(g, photo, cells, 0, 0, cutLines);
+  const rects = place(g, photo, cells, 0, 0, cutLines);
+  if (marks) cutMarks(g, rects);
   return { canvas: c, copies: cells.length };
 }
 
 /** Mixed sheet like the reference: 3 x 2x2 in down the left, 4 x 35x45 mm sideways down the right */
-export function comboSheet(usPhoto, euPhoto, cutLines = true) {
+export function comboSheet(usPhoto, euPhoto, cutLines = true, marks = true) {
   const { c, g } = newSheet();
   const leftW = usPhoto.width;
   const usCells = [0, 1, 2].map((r) => ({ x: 0, y: r * usPhoto.height, rot: false }));
   if (leftW + euPhoto.height > SHEET_W || 3 * usPhoto.height > SHEET_H || 4 * euPhoto.width > SHEET_H)
     throw new Error("These sizes don't fit together on 4x6 paper.");
-  place(g, usPhoto, usCells, 0, 0, cutLines);
+  const r1 = place(g, usPhoto, usCells, 0, 0, cutLines);
   const euCells = [0, 1, 2, 3].map((r) => ({ x: 0, y: r * euPhoto.width, rot: true }));
-  place(g, euPhoto, euCells, leftW, 0, cutLines);            // right column touches the left one, from the top
+  const r2 = place(g, euPhoto, euCells, leftW, 0, cutLines);  // right column touches the left one, from the top
+  if (marks) cutMarks(g, [...r1, ...r2]);
   return { canvas: c, copies: 7 };
 }
 
 /** 4 copies on top, coupon image (HTMLImageElement/ImageBitmap or null) underneath */
-export function couponSheet(photo, coupon, copies = 4, cutLines = true) {
+export function couponSheet(photo, coupon, copies = 4, cutLines = true, marks = true) {
   const w = photo.width, h = photo.height;
   const cols = Math.min(copies, Math.max(1, Math.floor(SHEET_W / w))), rows = Math.ceil(copies / cols);
   if (cols * w > SHEET_W || rows * h > SHEET_H) throw new Error(`${copies} copies of this size do not fit on 4x6 paper.`);
   const cells = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (cells.length < copies) cells.push({ x: c * w, y: r * h, rot: false });
   const { c, g } = newSheet();
-  place(g, photo, cells, 0, 0, cutLines);                     // block in the top-left corner
-  if (!coupon) return { canvas: c, copies };
+  const rects = place(g, photo, cells, 0, 0, cutLines);       // block in the top-left corner
+  if (!coupon) { if (marks) cutMarks(g, rects); return { canvas: c, copies }; }
   const top = rows * h, boxW = SHEET_W, boxH = SHEET_H - top;   // coupon right under the photos: one cut separates them
   if (boxH < 200) throw new Error("Not enough room for a coupon with this photo size - use the max-copies sheet.");
   let cw = coupon.width, chh = coupon.height, rotate = false;
@@ -121,6 +158,7 @@ export function couponSheet(photo, coupon, copies = 4, cutLines = true) {
   g.imageSmoothingQuality = "high";
   if (rotate) { g.save(); g.translate(x, y + dh); g.rotate(-Math.PI / 2); g.drawImage(coupon, 0, 0, dh, dw); g.restore(); }
   else g.drawImage(coupon, x, y, dw, dh);
+  if (marks) cutMarks(g, rects, [{ x, y, w: rotate ? dh : dw, h: rotate ? dw : dh }]);
   return { canvas: c, copies };
 }
 
