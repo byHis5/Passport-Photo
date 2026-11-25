@@ -82,8 +82,8 @@ function place(g, photo, cells, ox, oy, cutLines) {
   return rects;
 }
 
-// Cut marks for lining the sheet up on a cutting board: every cut line gets a short tick at both paper
-// edges, and faint dashes wherever it runs through blank paper (never over the photos).
+// Cut marks for lining the sheet up on a cutting board: drawn ONLY on blank offcut paper, never on a photo.
+// Each cut line gets a short tick where it reaches a blank paper edge, and faint dashes across blank paper.
 const MARK = "rgb(205,205,205)", TICK = 40, DASH = [14, 10];
 function cutMarks(g, photoRects, otherRects = []) {
   const xs = new Set(), ys = new Set();
@@ -96,19 +96,22 @@ function cutMarks(g, photoRects, otherRects = []) {
   const covered = (x, y) => all.some((r) => x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2);
   g.save(); g.strokeStyle = MARK; g.lineWidth = 2; g.lineCap = "butt";
   const seg = (x0, y0, x1, y1) => { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
+  // a segment is drawn only if every point of it is on blank offcut paper
+  const blank = (x0, y0, x1, y1) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 2));
+    for (let i = 0; i <= n; i++) if (covered(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n)) return false;
+    return true;
+  };
+  const mark = (x0, y0, x1, y1) => { if (blank(x0, y0, x1, y1)) seg(x0, y0, x1, y1); };
   for (const x of xs) {
-    seg(x, 0, x, TICK); seg(x, SHEET_H - TICK, x, SHEET_H);                       // edge ticks
-    for (let y = TICK + 6; y < SHEET_H - TICK - 6; y += DASH[0] + DASH[1]) {        // dashes on blank paper
-      const y1 = Math.min(y + DASH[0], SHEET_H - TICK - 6);
-      if (!covered(x, y) && !covered(x, y1)) seg(x, y, x, y1);
-    }
+    mark(x, 0, x, TICK); mark(x, SHEET_H - TICK, x, SHEET_H);                     // edge ticks (only on offcut)
+    for (let y = TICK + 6; y < SHEET_H - TICK - 6; y += DASH[0] + DASH[1])          // dashes on blank paper
+      mark(x, y, x, Math.min(y + DASH[0], SHEET_H - TICK - 6));
   }
   for (const y of ys) {
-    seg(0, y, TICK, y); seg(SHEET_W - TICK, y, SHEET_W, y);
-    for (let x = TICK + 6; x < SHEET_W - TICK - 6; x += DASH[0] + DASH[1]) {
-      const x1 = Math.min(x + DASH[0], SHEET_W - TICK - 6);
-      if (!covered(x, y) && !covered(x1, y)) seg(x, y, x1, y);
-    }
+    mark(0, y, TICK, y); mark(SHEET_W - TICK, y, SHEET_W, y);
+    for (let x = TICK + 6; x < SHEET_W - TICK - 6; x += DASH[0] + DASH[1])
+      mark(x, y, Math.min(x + DASH[0], SHEET_W - TICK - 6), y);
   }
   g.restore();
 }
