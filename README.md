@@ -65,6 +65,8 @@ Tip: in Chrome or Edge, use the *install app* icon in the address bar to get a d
   * *Custom size…* at the end of the list takes any size.
 
 ## Printing
+Sheets are laid out to save cutting time. The photos touch each other and start in the top-left corner of the paper. Every cut runs straight across the whole sheet, the paper edges are already cut, and all the waste comes off as one strip on the right or bottom. When two layouts fit the same number of photos, the one needing fewer cuts is used. For example, 35×45 mm prints as a 2×4 grid of sideways photos.
+
 
 Print 4×6 sheets **borderless at 100% / actual size**, and turn off "fit to page" and auto-enhance. Two 2-inch photos fill the 4-inch width exactly.
 

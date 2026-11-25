@@ -37,7 +37,26 @@ export function pack(W, H, w, h) {
     memo.set(key, res);
     return res;
   }
-  return best(W, H).cells;
+  // Several layouts can fit the same number of photos. Prefer the one that is quickest to cut:
+  // fewest distinct cut positions, i.e. a plain grid whose cuts run straight across the sheet.
+  const grid = (pw, ph, rot) => {
+    const cells = []; for (let y = 0; y + ph <= H; y += ph) for (let x = 0; x + pw <= W; x += pw) cells.push({ x, y, rot });
+    return cells;
+  };
+  const cands = [best(W, H).cells, grid(w, h, false), grid(h, w, true)];
+  const n = Math.max(...cands.map((c) => c.length));
+  return cands.filter((c) => c.length === n).sort((a, b) => cutCount(a, w, h, W, H) - cutCount(b, w, h, W, H))[0];
+}
+
+/** number of distinct straight cuts needed (paper edges are free) */
+export function cutCount(cells, w, h, W = SHEET_W, H = SHEET_H) {
+  const xs = new Set(), ys = new Set();
+  for (const { x, y, rot } of cells) {
+    const cw = rot ? h : w, ch = rot ? w : h;
+    [x, x + cw].forEach((v) => { if (v > 0 && v < W) xs.add(v); });
+    [y, y + ch].forEach((v) => { if (v > 0 && v < H) ys.add(v); });
+  }
+  return xs.size + ys.size;
 }
 
 export const maxCopiesFor = (w, h) => pack(SHEET_W, SHEET_H, w, h).length;
@@ -63,10 +82,10 @@ function place(g, photo, cells, ox, oy, cutLines) {
 export function maxCopiesSheet(photo, cutLines = true) {
   const cells = pack(SHEET_W, SHEET_H, photo.width, photo.height);
   if (!cells.length) throw new Error("Photo is larger than 4x6 paper.");
-  const bw = Math.max(...cells.map((q) => q.x + (q.rot ? photo.height : photo.width)));
-  const bh = Math.max(...cells.map((q) => q.y + (q.rot ? photo.width : photo.height)));
+  // photos touch each other and the top-left corner: straight cuts right across the sheet,
+  // paper edges count as cuts, and all waste is one strip on the right / bottom
   const { c, g } = newSheet();
-  place(g, photo, cells, Math.floor((SHEET_W - bw) / 2), Math.floor((SHEET_H - bh) / 2), cutLines);
+  place(g, photo, cells, 0, 0, cutLines);
   return { canvas: c, copies: cells.length };
 }
 
@@ -77,10 +96,9 @@ export function comboSheet(usPhoto, euPhoto, cutLines = true) {
   const usCells = [0, 1, 2].map((r) => ({ x: 0, y: r * usPhoto.height, rot: false }));
   if (leftW + euPhoto.height > SHEET_W || 3 * usPhoto.height > SHEET_H || 4 * euPhoto.width > SHEET_H)
     throw new Error("These sizes don't fit together on 4x6 paper.");
-  place(g, usPhoto, usCells, 0, Math.floor((SHEET_H - 3 * usPhoto.height) / 2), cutLines);
+  place(g, usPhoto, usCells, 0, 0, cutLines);
   const euCells = [0, 1, 2, 3].map((r) => ({ x: 0, y: r * euPhoto.width, rot: true }));
-  const ox = leftW + Math.floor((SHEET_W - leftW - euPhoto.height) / 2), oy = Math.floor((SHEET_H - 4 * euPhoto.width) / 2);
-  place(g, euPhoto, euCells, ox, oy, cutLines);
+  place(g, euPhoto, euCells, leftW, 0, cutLines);            // right column touches the left one, from the top
   return { canvas: c, copies: 7 };
 }
 
@@ -92,15 +110,14 @@ export function couponSheet(photo, coupon, copies = 4, cutLines = true) {
   const cells = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (cells.length < copies) cells.push({ x: c * w, y: r * h, rot: false });
   const { c, g } = newSheet();
-  const ox = Math.floor((SHEET_W - cols * w) / 2);
-  place(g, photo, cells, ox, 0, cutLines);
+  place(g, photo, cells, 0, 0, cutLines);                     // block in the top-left corner
   if (!coupon) return { canvas: c, copies };
-  const top = rows * h + 10, boxW = SHEET_W - 40, boxH = SHEET_H - 20 - top;
+  const top = rows * h, boxW = SHEET_W, boxH = SHEET_H - top;   // coupon right under the photos: one cut separates them
   if (boxH < 200) throw new Error("Not enough room for a coupon with this photo size - use the max-copies sheet.");
   let cw = coupon.width, chh = coupon.height, rotate = false;
   if (cw < chh && boxW >= boxH) { rotate = true; [cw, chh] = [chh, cw]; }
   const s = Math.min(boxW / cw, boxH / chh), dw = Math.round(cw * s), dh = Math.round(chh * s);
-  const x = Math.round((SHEET_W - dw) / 2), y = Math.round(top + (boxH - dh) / 2);
+  const x = 0, y = top;
   g.imageSmoothingQuality = "high";
   if (rotate) { g.save(); g.translate(x, y + dh); g.rotate(-Math.PI / 2); g.drawImage(coupon, 0, 0, dh, dw); g.restore(); }
   else g.drawImage(coupon, x, y, dw, dh);
