@@ -10,7 +10,7 @@ const ADJ = ["rotate", "zoom", "shift_x", "shift_y", "brightness", "contrast", "
 const ADJ_DEFAULT = { rotate: 0, zoom: 1, shift_x: 0, shift_y: 0, brightness: 0, contrast: 0, saturation: 0, warmth: 0 };
 
 const state = {
-  ready: false, file: null, a: null, prep: null, prepKey: null, heal: [], countries: [], spec: null,
+  ready: false, file: null, a: null, prep: null, prepKey: null, heal: [], alphaEdits: [], history: [], countries: [], spec: null,
   last: null,               // {canvas (print-size), M, W, H, meas, warnings}
   coupons: [],
 };
@@ -81,6 +81,7 @@ function selectCountry(id) {
 function clearPhoto() {
   P.freePrepared(state.prep); state.prep = null; state.prepKey = null;
   state.heal.forEach((m) => m.delete()); state.heal = [];
+  state.alphaEdits.forEach((e) => e.mask.delete()); state.alphaEdits = []; state.history = [];
   P.freeAnalysis(state.a); state.a = null;
 }
 
@@ -105,8 +106,9 @@ function healUnion() {
 
 function ensurePrepared() {
   const r = retouch();
-  const key = JSON.stringify([r.removeBg, Math.round(r.airbrush * 100), Math.round(r.blemish * 100), r.darkSkin, state.heal.length]);
+  const key = JSON.stringify([r.removeBg, Math.round(r.airbrush * 100), Math.round(r.blemish * 100), r.darkSkin, state.heal.length, state.alphaEdits.length]);
   if (state.prepKey === key && state.prep) return;
+  if (state.alphaKey !== state.alphaEdits.length) { P.applyAlphaEdits(state.a, state.alphaEdits); state.alphaKey = state.alphaEdits.length; }
   P.freePrepared(state.prep);
   const hm = healUnion();
   state.prep = P.prepare(state.a, r, hm);
@@ -151,7 +153,7 @@ function show(r) {
   drawOverlay();
   ["dlSingle", "dlMax", "dlCoupon", "dlCombo"].forEach((b) => ($(b).disabled = false));
   $("dlMax").textContent = `🖨 4×6 sheet – max copies (${L.maxCopiesFor(r.W, r.H)})`;
-  $("healUndo").disabled = !state.heal.length;
+  $("healUndo").disabled = !state.history.length;
   const m = r.meas, ok = (b) => (b ? "ok" : "bad");
   let html = `<span class="${ok(m.head_ok)}">Head ${m.head_mm} mm ${m.head_ok ? "✓" : "✗"}</span>`;
   if (m.eye_ok !== null) html += `<span class="${ok(m.eye_ok)}">Eyes ${m.eye_mm} mm from bottom ${m.eye_ok ? "✓" : "✗"}</span>`;
@@ -162,7 +164,7 @@ function show(r) {
   r.notes.forEach((t) => { const li = document.createElement("li"); li.className = "info"; li.textContent = t; w.appendChild(li); });
 }
 
-// ---------------------------------------------------------------- overlay: guides + heal brush
+// ---------------------------------------------------------------- overlay: guides + brushes
 let stroke = null;
 function drawOverlay() {
   const r = state.last, cv = $("overlay"); if (!r) return;
@@ -191,25 +193,44 @@ function drawStroke(g, st) {
 }
 const pt = (ev) => { const b = $("overlay").getBoundingClientRect(); return [(ev.clientX - b.left) / b.width, (ev.clientY - b.top) / b.height]; };
 
+function pushHeal(mask) { state.heal.push(mask); state.history.push("heal"); }
 function addHeal(strokes) {
   const r = state.last; if (!r) return;
   const mask = P.strokesToMask(state.a, r.M, r.W, r.H, strokes);
-  if (P.getCv().countNonZero(mask)) state.heal.push(mask); else mask.delete();
+  if (P.getCv().countNonZero(mask)) pushHeal(mask); else mask.delete();
+}
+function addAlphaEdit(strokes, mode) {
+  const r = state.last; if (!r) return;
+  const mask = P.strokesToMask(state.a, r.M, r.W, r.H, strokes);
+  if (P.getCv().countNonZero(mask)) { state.alphaEdits.push({ mask, mode }); state.history.push("alpha"); } else mask.delete();
+}
+function undoBrush() {
+  const last = state.history.pop();
+  if (last === "heal") { const m = state.heal.pop(); if (m) m.delete(); }
+  else if (last === "alpha") { const e = state.alphaEdits.pop(); if (e) e.mask.delete(); }
+  renderNow();
 }
 function setupBrush() {
   const cv = $("overlay");
   cv.addEventListener("pointerdown", (e) => {
-    if (!$("brushOn").checked || !state.a) return;
+    if (!$("brushMode").value || !state.a) return;
     cv.setPointerCapture(e.pointerId); stroke = { points: [pt(e)], radius: +$("brushSize").value }; drawOverlay();
   });
   cv.addEventListener("pointermove", (e) => { if (stroke) { stroke.points.push(pt(e)); drawOverlay(); } });
   cv.addEventListener("pointerup", async () => {
     if (!stroke) return; const st = stroke; stroke = null;
-    addHeal([st]); await renderNow();
+    const mode = $("brushMode").value;
+    if (mode === "heal") addHeal([st]); else addAlphaEdit([st], mode);
+    await renderNow();
   });
   cv.addEventListener("pointercancel", () => { stroke = null; drawOverlay(); });
-  $("brushOn").addEventListener("change", () => { $("frame").classList.toggle("brush", $("brushOn").checked); $("brushSizeWrap").hidden = !$("brushOn").checked; });
-  $("healUndo").addEventListener("click", () => { const m = state.heal.pop(); if (m) m.delete(); renderNow(); });
+  $("brushMode").addEventListener("change", () => {
+    const m = $("brushMode").value, f = $("frame");
+    f.classList.toggle("brush", !!m); f.classList.toggle("erase", m === "erase"); f.classList.toggle("restore", m === "restore");
+    $("brushSizeWrap").hidden = !m;
+    if (m === "erase" || m === "restore") toast(m === "erase" ? "Paint over leftover background to turn it white." : "Paint over parts of the person that were removed by mistake.");
+  });
+  $("healUndo").addEventListener("click", undoBrush);
 }
 
 // ---------------------------------------------------------------- adjust
@@ -233,7 +254,7 @@ async function runAI(check) {
     await renderNow();
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     let html = `<div>${esc(p.summary)}</div>`;
-    if (p.remove_regions.length) html += `<div class="small muted">Removed: ${p.remove_regions.map((x) => esc(x.label)).join(", ")} (Undo heal reverts; the heal brush touches up)</div>`;
+    if (p.remove_regions.length) html += `<div class="small muted">Removed: ${p.remove_regions.map((x) => esc(x.label)).join(", ")} (Undo brush reverts; Brush › Heal touches up)</div>`;
     if (p.cannot_do.length) html += `<b>Can't do automatically:</b><ul>${p.cannot_do.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
     if (p.compliance_notes.length) html += `<b>Passport check:</b><ul>${p.compliance_notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
     else if (check) html += `<div class="small" style="color:var(--ok)">No compliance problems spotted.</div>`;
@@ -276,7 +297,7 @@ async function runLocal(check, instr) {
     try {
       const { mask, found } = Q.findJewelry(state.a, cmd.remove);
       const cv = P.getCv();
-      if (cv.countNonZero(mask)) state.heal.push(mask); else mask.delete();
+      if (cv.countNonZero(mask)) pushHeal(mask); else mask.delete();
       const got = [...cmd.remove].filter((k) => found[k]);
       if (got.length) done.push("Removed " + got.map((k) => NAMES[k]).join(", "));
       [...cmd.remove].filter((k) => !found[k]).forEach((k) => notFound.push(k));
@@ -284,8 +305,8 @@ async function runLocal(check, instr) {
   }
   await renderNow();
   let html = done.length ? `<div>${done.map(esc).join(". ")}.</div>` : "";
-  if (cmd.remove.size && done.some((d) => d.startsWith("Removed"))) html += `<div class="small muted">Check the result. Undo heal reverts it; the heal brush cleans up anything left.</div>`;
-  if (notFound.length) html += `<div class="small">No ${notFound.map((k) => NAMES[k]).join(" or ")} found on bare skin – if there is some, paint over it with the <b>Heal brush</b>.</div>`;
+  if (cmd.remove.size && done.some((d) => d.startsWith("Removed"))) html += `<div class="small muted">Check the result. Undo brush reverts it; Brush › Heal cleans up anything left.</div>`;
+  if (notFound.length) html += `<div class="small">No ${notFound.map((k) => NAMES[k]).join(" or ")} found on bare skin – if there is some, paint over it with <b>Brush › Heal spots / jewelry</b>.</div>`;
   if (cmd.notes.length) html += `<b>Can't do by editing:</b><ul>${cmd.notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
   if (cmd.unknown.length) html += `<div class="small">Didn't understand: “${cmd.unknown.map(esc).join("”, “")}”.</div><div class="small muted">${esc(Q.HELP)}</div>`;
   if (!html) html = `<div class="small muted">${esc(Q.HELP)}</div>`;

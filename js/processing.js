@@ -131,6 +131,47 @@ function cleanAlpha(a) {
   return a;
 }
 
+// Run the model again on a crop around the head and shoulders: ~3x more detail where it matters
+// (hair, ears, face edge), then blend it into the full mask with a soft border.
+async function headPass(rgb, alpha, lm, faceW) {
+  const ys = lm.map((p) => p[1]), xs = lm.map((p) => p[0]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const x0 = Math.max(0, Math.round(cx - faceW * 1.1)), x1 = Math.min(rgb.cols, Math.round(cx + faceW * 1.1));
+  const y0 = Math.max(0, Math.round(Math.min(...ys) - faceW * 0.9)), y1 = Math.min(rgb.rows, Math.round(Math.max(...ys) + faceW * 0.7));
+  const w = x1 - x0, h = y1 - y0;
+  if (w < 64 || h < 64 || w * h > rgb.cols * rgb.rows * 0.8) return;   // crop would not add detail
+  const crop = rgb.roi(new cv.Rect(x0, y0, w, h)).clone();
+  const m = await personMask(crop); crop.delete();
+  // blend weight: 1 inside, fading to 0 over the last 12% of the crop (unless the crop touches the photo edge)
+  const fx = w * 0.12, fy = h * 0.12, A = alpha.data, M = m.data, W = alpha.cols;
+  for (let y = 0; y < h; y++) {
+    const wy = Math.min(1, (y0 === 0 ? 1e9 : y) / fy, (y1 === rgb.rows ? 1e9 : h - 1 - y) / fy);
+    for (let x = 0; x < w; x++) {
+      const wt = Math.min(wy, (x0 === 0 ? 1e9 : x) / fx, (x1 === rgb.cols ? 1e9 : w - 1 - x) / fx);
+      if (wt <= 0) continue;
+      const i = (y + y0) * W + x + x0;
+      A[i] = Math.round(A[i] * (1 - wt) + M[y * w + x] * wt);
+    }
+  }
+  m.delete();
+}
+
+/** manual background brush: edits = [{mask (source space), mode: "erase"|"restore"}] applied over the auto mask */
+export function applyAlphaEdits(a, edits) {
+  a.alpha0.copyTo(a.alpha);
+  const A = a.alpha.data;
+  for (const { mask, mode } of edits) {
+    const soft = new cv.Mat(); cv.GaussianBlur(mask, soft, new cv.Size(0, 0), 1.2);
+    const S = soft.data;
+    for (let i = 0; i < A.length; i++) {
+      const w = S[i] / 255; if (!w) continue;
+      A[i] = Math.round(mode === "erase" ? A[i] * (1 - w) : A[i] + (255 - A[i]) * w);
+    }
+    soft.delete();
+  }
+  a.crownCache.clear();
+}
+
 // Snap the (low-res, blurry) model mask to real edges in the full photo with a fast guided filter,
 // then make it fully solid inside the person and fully clear well outside.
 function refineAlpha(rgb, alpha) {
@@ -256,24 +297,25 @@ export async function analyze(blob, quarterTurns = null) {
   let alpha = await personMask(rgb);
   const k = quarterTurns === null ? bodyEdge(alpha) : ((quarterTurns % 4) + 4) % 4;
   rgb = rotateQuarter(rgb, k); alpha = rotateQuarter(alpha, k);
-  alpha = refineAlpha(rgb, alpha);
-  const bgEst = estimateBackground(rgb, alpha);
-  alpha = cleanEdgeAlpha(rgb, alpha, bgEst);
   let found;
-  try { found = detectLandmarks(rgb); } catch (e) { rgb.delete(); alpha.delete(); bgEst.delete(); throw e; }
+  try { found = detectLandmarks(rgb); } catch (e) { rgb.delete(); alpha.delete(); throw e; }
   const { lm, n } = found;
   const xs = FACE_OVAL.map((i) => lm[i][0]);
   const faceW = Math.max(...xs) - Math.min(...xs);
+  await headPass(rgb, alpha, lm, faceW);          // second, close-up pass for hair and head edges
+  alpha = refineAlpha(rgb, alpha);
+  const bgEst = estimateBackground(rgb, alpha);
+  alpha = cleanEdgeAlpha(rgb, alpha, bgEst);
   const warnings = [];
   if (k && quarterTurns === null) warnings.push(`Photo was sideways/upside-down - auto-rotated ${k * 90}°.`);
   if (n > 1) warnings.push("More than one face found - using the largest one.");
   if (faceW < 180) warnings.push("Face is small in this photo; print quality may be low. Move the camera closer.");
-  return { rgb, alpha, bgEst, lm, faceW, warnings, quarterTurns: k, crownCache: new Map() };
+  return { rgb, alpha, alpha0: alpha.clone(), bgEst, lm, faceW, warnings, quarterTurns: k, crownCache: new Map() };
 }
 
 export function freeAnalysis(a) {
   if (!a) return;
-  a.rgb.delete(); a.alpha.delete(); a.bgEst.delete(); if (a.skin) a.skin.delete();
+  a.rgb.delete(); a.alpha.delete(); a.alpha0.delete(); a.bgEst.delete(); if (a.skin) a.skin.delete();
   if (a.blemishBase) Object.values(a.blemishBase).forEach((m) => m.delete());
 }
 

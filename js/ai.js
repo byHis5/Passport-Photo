@@ -92,7 +92,7 @@ export async function planEdits(jpegBlob, instruction, current, spec, meas) {
     if (e instanceof Anthropic.APIError) throw new AIError(`Claude API error (${e.status}): ${e.message}`);
     throw e;
   }
-  if (resp.stop_reason === "refusal") throw new AIError("Claude declined this request. Use the sliders and heal brush instead.");
+  if (resp.stop_reason === "refusal") throw new AIError("Claude declined this request. Use the sliders and the Brush menu instead.");
   const block = resp.content.find((b) => b.type === "text");
   if (!block) throw new AIError("Claude returned no result - try again.");
   return clamp(JSON.parse(block.text));

@@ -91,9 +91,15 @@
   <section class="panel preview">
     <div class="toolbar">
       <label class="check"><input type="checkbox" id="guides" checked> Guides</label>
-      <label class="check"><input type="checkbox" id="brushOn"> Heal brush</label>
+      <label class="inline-row">Brush
+        <select id="brushMode" title="Paint on the photo">
+          <option value="">Off</option>
+          <option value="heal">Heal spots / jewelry</option>
+          <option value="erase">Erase background</option>
+          <option value="restore">Restore person</option>
+        </select></label>
       <label class="slider tiny" id="brushSizeWrap" hidden>size <input type="range" id="brushSize" min="0.005" max="0.06" step="0.001" value="0.018"></label>
-      <button class="btn sm" id="healUndo" disabled>Undo heal</button>
+      <button class="btn sm" id="healUndo" disabled>Undo brush</button>
       <span class="grow"></span>
       <span id="busy" class="busy" hidden>working…</span>
     </div>

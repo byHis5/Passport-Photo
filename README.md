@@ -12,7 +12,7 @@ A web page that turns a customer photo into a print-ready passport photo. **Ever
 1. **Upload** a photo (drag & drop, click, or Ctrl+V paste). Sideways or upside-down photos are turned upright automatically. Use ⟲ / ⟳ if one isn't.
 2. **Choose the document.** United States Passport is the default and first in the list, followed by more than 200 country and document sizes. Type to search.
 3. **Retouch** (automatic, adjustable):
-   * White background. The person's outline is snapped to the real edges, and any colour from the old background in the hair and along the edges is replaced with white, so no coloured fringe is left.
+   * White background. The built-in remover runs a second close-up pass on the head and hair for finer edges. It snaps the outline to the real edges, and replaces any colour from the old background in the hair and along the edges with white. If anything is left, **Brush › Erase background** paints it white, and **Brush › Restore person** brings back anything removed by mistake.
    * Slight airbrush, on skin only. Eyes, lips, brows, beards and hair are left alone, and texture is kept.
    * Slight blemish fix
    * Dark-skin exposure. *Auto* gently lifts a dark face so the features read clearly, without changing the skin tone. It can also be set to *Always on* or *Off*.
@@ -20,9 +20,9 @@ A web page that turns a customer photo into a print-ready passport photo. **Ever
 5. **Special instructions.**
    * **Without an API key**, quick commands work on this computer for free: *remove jewelry*, *remove necklace*, *remove earrings*, *remove nose ring*, *brighter*, *darker*, *warmer*, *cooler*, *smoother skin*, *remove spots*, *straighten*, *rotate left 2*, *bigger*, *smaller*, *move up / down / left / right*, *reset*. You can combine them: "remove jewelry, a bit brighter, move up".
      * Jewelry is found automatically. The app looks for metal-coloured things (gold, silver, white) lying on bare skin at the neck, earlobes and nose, and erases them. Clothing is never touched.
-     * Jewelry on top of clothing, or dark jewelry, isn't found. Paint over it with the heal brush.
+     * Jewelry on top of clothing, or dark jewelry, isn't found. Paint over it with **Brush › Heal spots / jewelry**.
    * **With a Claude API key** (⚙ Settings) you can type anything, e.g. *"head is still tilted, straighten it"*, and **Check photo** gives an AI passport-rule review.
-   * The **heal brush** paints out spots by hand, and **Undo heal** reverts.
+   * The **Brush** menu above the photo has **Heal spots / jewelry**, **Erase background** and **Restore person**. **Undo brush** steps back one stroke at a time.
 6. **Output**: 300 dpi JPG
    * **Single photo**, for emailing.
    * **4×6 sheet, max copies**: 6 for US 2×2, 8 for 35×45 mm, 9 for China.
@@ -75,7 +75,7 @@ Print 4×6 sheets **borderless at 100% / actual size**, and turn off "fit to pag
 ## Limits
 
 * The app can't remove glasses, hats or shadows, and can't change expression or clothing. Those need a retake, and the app warns you.
-* Jewelry removal fills the area from the surrounding pixels. It works well on earrings and studs and on small piercings. Large necklaces are better retaken.
+* Jewelry removal (and Brush › Heal) fills the area from the surrounding pixels. It works well on earrings and studs and on small piercings. Large necklaces are better retaken.
 * Best input: an evenly lit photo with the camera at eye level and the face filling about half the frame.
 
 ## Files
