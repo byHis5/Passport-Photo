@@ -405,6 +405,12 @@ function init() {
   $("resetAdj").addEventListener("click", () => resetAdjust());
 
   $("aiApply").addEventListener("click", () => runAI(false));
+  document.querySelectorAll(".cmd").forEach((b) => b.addEventListener("click", async () => {
+    if (!state.last) return toast("Upload a photo first", true);
+    document.querySelectorAll(".cmd").forEach((x) => (x.disabled = true));
+    try { await runLocal(false, b.dataset.cmd); b.classList.add("done"); setTimeout(() => b.classList.remove("done"), 1500); }
+    finally { document.querySelectorAll(".cmd").forEach((x) => (x.disabled = false)); }
+  }));
   $("aiCheck").addEventListener("click", () => runAI(true));
   $("instruction").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) runAI(false); });
 

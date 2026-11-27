@@ -77,13 +77,47 @@
 
     <div class="card">
       <h2><span class="step">5</span> Special instructions</h2>
-      <textarea id="instruction" rows="3" placeholder="e.g. remove jewelry, a bit brighter, move up"></textarea>
-      <div class="row gap">
-        <button class="btn primary" id="aiApply">Apply instructions</button>
-        <button class="btn" id="aiCheck" title="Ask Claude to review the photo against the passport rules">Check photo</button>
+      <div class="cmds" id="cmds">
+        <div class="cmd-group"><span class="cmd-label">Jewelry</span>
+          <button class="btn sm cmd" data-cmd="remove jewelry">Remove all jewelry</button>
+          <button class="btn sm cmd" data-cmd="remove necklace">Necklace</button>
+          <button class="btn sm cmd" data-cmd="remove earrings">Earrings</button>
+          <button class="btn sm cmd" data-cmd="remove nose ring">Nose ring</button>
+        </div>
+        <div class="cmd-group"><span class="cmd-label">Light &amp; colour</span>
+          <button class="btn sm cmd" data-cmd="brighter">Brighter</button>
+          <button class="btn sm cmd" data-cmd="darker">Darker</button>
+          <button class="btn sm cmd" data-cmd="warmer">Warmer</button>
+          <button class="btn sm cmd" data-cmd="cooler">Cooler</button>
+          <button class="btn sm cmd" data-cmd="more contrast">More contrast</button>
+        </div>
+        <div class="cmd-group"><span class="cmd-label">Skin</span>
+          <button class="btn sm cmd" data-cmd="smoother skin">Smoother skin</button>
+          <button class="btn sm cmd" data-cmd="remove spots">Remove spots</button>
+        </div>
+        <div class="cmd-group"><span class="cmd-label">Position</span>
+          <button class="btn sm cmd" data-cmd="straighten">Straighten</button>
+          <button class="btn sm cmd" data-cmd="rotate left 1" title="Rotate 1° left">Rotate ⟲</button>
+          <button class="btn sm cmd" data-cmd="rotate right 1" title="Rotate 1° right">Rotate ⟳</button>
+          <button class="btn sm cmd" data-cmd="bigger">Bigger</button>
+          <button class="btn sm cmd" data-cmd="smaller">Smaller</button>
+          <button class="btn sm cmd" data-cmd="move up" aria-label="Move up">↑ Up</button>
+          <button class="btn sm cmd" data-cmd="move down" aria-label="Move down">↓ Down</button>
+          <button class="btn sm cmd" data-cmd="move left" aria-label="Move left">← Left</button>
+          <button class="btn sm cmd" data-cmd="move right" aria-label="Move right">→ Right</button>
+        </div>
+        <div class="cmd-group">
+          <button class="btn sm" id="aiCheck" title="Check the photo against the passport rules">✓ Check photo</button>
+          <button class="btn sm cmd" data-cmd="reset" title="Reset position and tone">↺ Reset</button>
+        </div>
       </div>
       <div id="aiResult" class="ai-result" hidden></div>
-      <p class="muted small" id="aiHint">Works without an API key for: remove jewelry / necklace / earrings / nose ring, brighter, darker, warmer, cooler, smoother skin, remove spots, straighten, rotate left 2, bigger, smaller, move up / down / left / right, reset. With a Claude API key (⚙ Settings) you can type anything.</p>
+      <details class="own">
+        <summary class="small">Type your own instruction</summary>
+        <textarea id="instruction" rows="2" placeholder="e.g. head is still tilted, a bit warmer"></textarea>
+        <button class="btn primary sm" id="aiApply">Apply</button>
+        <p class="muted small">Without a Claude API key this understands the same commands as the buttons. With a key (⚙ Settings) you can ask for anything.</p>
+      </details>
     </div>
   </section>
 

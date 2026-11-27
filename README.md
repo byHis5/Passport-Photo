@@ -12,16 +12,18 @@ A web page that turns a customer photo into a print-ready passport photo. **Ever
 1. **Upload** a photo (drag & drop, click, or Ctrl+V paste). Sideways or upside-down photos are turned upright automatically. Use ⟲ / ⟳ if one isn't.
 2. **Choose the document.** United States Passport is the default and first in the list, followed by more than 200 country and document sizes. Type to search.
 3. **Retouch** (automatic, adjustable):
-   * White background. The built-in remover runs a second close-up pass on the head and hair for finer edges. It snaps the outline to the real edges, and replaces any colour from the old background in the hair and along the edges with white. If anything is left, **Brush › Erase background** paints it white, and **Brush › Restore person** brings back anything removed by mistake.
+   * White background. The built-in remover runs a second close-up pass on the head and hair and snaps the outline to the real edges. It replaces any colour from the old background in the hair and along the edges with white, and clears wall shadows cast next to the person. A shadow is only cleared when it's wall-coloured, smooth and fades softly into the wall, so hair, ears, shoulders and clothing (which have texture or a sharp edge) are kept, and the face is never touched. If anything is left, **Brush › Erase background** paints it white, and **Brush › Restore person** brings back anything removed by mistake.
    * Slight airbrush, on skin only. Eyes, lips, brows, beards and hair are left alone, and texture is kept.
    * Slight blemish fix
    * Dark-skin exposure. *Auto* gently lifts a dark face so the features read clearly, without changing the skin tone. It can also be set to *Always on* or *Off*.
 4. **Position.** The head is auto-straightened, then sized and placed to the country's head-height and eye-height rules. Guide lines and ✓/✗ measurements show the result.
-5. **Special instructions.**
-   * **Without an API key**, quick commands work on this computer for free: *remove jewelry*, *remove necklace*, *remove earrings*, *remove nose ring*, *brighter*, *darker*, *warmer*, *cooler*, *smoother skin*, *remove spots*, *straighten*, *rotate left 2*, *bigger*, *smaller*, *move up / down / left / right*, *reset*. You can combine them: "remove jewelry, a bit brighter, move up".
-     * Jewelry is found automatically. The app looks for metal-coloured things (gold, silver, white) lying on bare skin at the neck, earlobes and nose, and erases them. Clothing is never touched.
-     * Jewelry on top of clothing, or dark jewelry, isn't found. Paint over it with **Brush › Heal spots / jewelry**.
-   * **With a Claude API key** (⚙ Settings) you can type anything, e.g. *"head is still tilted, straighten it"*, and **Check photo** gives an AI passport-rule review.
+5. **Special instructions:** one-tap buttons, free and offline.
+   * **Jewelry:** Remove all jewelry, Necklace, Earrings, Nose ring. Metal-coloured jewelry (gold, silver, white) on bare skin is found and erased automatically; clothing is never touched. Jewelry on top of clothing, and dark jewelry, isn't found: paint over it with **Brush › Heal spots / jewelry**.
+   * **Light & colour:** Brighter, Darker, Warmer, Cooler, More contrast
+   * **Skin:** Smoother skin, Remove spots
+   * **Position:** Straighten, Rotate ⟲ / ⟳ (1° per tap), Bigger, Smaller, ↑ ↓ ← →
+   * **✓ Check photo** shows the automatic measurements, or an AI review when a Claude key is set. **↺ Reset** puts position and tone back.
+   * **Type your own instruction** (folded away under the buttons) understands the same commands. With a Claude API key (⚙ Settings) you can ask for anything.
    * The **Brush** menu above the photo has **Heal spots / jewelry**, **Erase background** and **Restore person**. **Undo brush** steps back one stroke at a time.
 6. **Output**: 300 dpi JPG
    * **Single photo**, for emailing.
