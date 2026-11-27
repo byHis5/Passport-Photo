@@ -211,7 +211,7 @@ function refineAlpha(rgb, alpha) {
 }
 
 // Smooth estimate of what the background looked like behind every pixel (from nearby background pixels)
-function estimateBackground(rgb, alpha) {
+function estimateBackground(rgb, alpha, coarseOnly = false) {
   const t = tracker();
   const W = rgb.cols, H = rgb.rows, s = Math.min(1, 360 / Math.max(W, H));
   const sw = Math.max(1, Math.round(W * s)), sh = Math.max(1, Math.round(H * s));
@@ -235,7 +235,7 @@ function estimateBackground(rgb, alpha) {
   const est = t(new cv.Mat(sh, sw, cv.CV_8UC3));
   for (let i = 0, p = 0; i < sw * sh; i++, p += 3) {
     const df = dF.data32F[i], dc = dC.data32F[i];
-    const kf = Math.min(1, df / 0.08), kc = Math.min(1, dc / 0.02);
+    const kf = coarseOnly ? 0 : Math.min(1, df / 0.08), kc = Math.min(1, dc / 0.02);
     for (let c = 0; c < 3; c++) {
       const coarse = dc > 1e-6 ? (nC.data32F[p + c] / dc) * kc + g[c] * (1 - kc) : g[c];
       const fine = df > 1e-6 ? nF.data32F[p + c] / df : coarse;
@@ -301,7 +301,7 @@ function removeShadows(rgb, alpha, bgEst, lm, faceW) {
     const dc = Math.abs(D[p] / s1 - B[p] / s2) + Math.abs(D[p + 1] / s1 - B[p + 1] / s2) + Math.abs(D[p + 2] / s1 - B[p + 2] / s2);
     if (dc > 0.06) continue;                                                       // same colour as the wall
     const mu = m1.data32F[i], sd = Math.sqrt(Math.max(0, m2.data32F[i] - mu * mu));
-    if (sd > 7) continue;                                                          // smooth (hair is textured)
+    if (sd > 10) continue;                                                         // smooth (hair is textured)
     C[i] = 255;
   }
   const labs = t(new cv.Mat()), stats = t(new cv.Mat()), cent = t(new cv.Mat());
@@ -318,11 +318,11 @@ function removeShadows(rgb, alpha, bgEst, lm, faceW) {
       border[l]++;
       if (bgN) { touch[l]++; gsum[l] += Math.hypot(gx.data32F[i], gy.data32F[i]); }
     }
-    const minA = Math.max(30, (faceW * 0.03) ** 2), keep = new Uint8Array(n);
+    const minA = Math.max(20, (faceW * 0.02) ** 2), keep = new Uint8Array(n);
     for (let l = 1; l < n; l++) {
       if (stats.intAt(l, cv.CC_STAT_AREA) < minA || touch[l] < 8) continue;
       const frac = touch[l] / border[l], g = gsum[l] / touch[l];
-      if (frac >= 0.15 && g < 14) keep[l] = 1;                                     // attached to the wall, soft edge
+      if (frac >= 0.12 && g < 18) keep[l] = 1;                                     // attached to the wall, soft edge
     }
     let any = false;
     const sh = t(cv.Mat.zeros(H, W, cv.CV_8UC1));
@@ -335,6 +335,31 @@ function removeShadows(rgb, alpha, bgEst, lm, faceW) {
   }
   t.free();
   return alpha;
+}
+
+// The last few pixels of the outline: anything that is the wall's colour but darker than the lit wall is
+// shadow on the wall (skin has a different colour; dark hair/beard is far darker than a shadow) -> clear it.
+function shadowRim(rgb, alpha) {
+  const t = tracker();
+  const W = rgb.cols, H = rgb.rows, N = W * H, D = rgb.data, A = alpha.data;
+  const lit = t(estimateBackground(rgb, alpha, true)), L = lit.data;            // the wall as if fully lit
+  const bg = t(new cv.Mat(H, W, cv.CV_8UC1));
+  for (let i = 0; i < N; i++) bg.data[i] = A[i] < 30 ? 255 : 0;
+  const R = Math.max(3, Math.round(Math.max(W, H) * 0.005)) * 2 + 1;
+  const se = t(cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(R, R)));
+  const near = t(new cv.Mat()); cv.dilate(bg, near, se);
+  for (let i = 0, p = 0; i < N; i++, p += 3) {
+    if (!A[i] || !near.data[i]) continue;
+    const y = 0.299 * D[p] + 0.587 * D[p + 1] + 0.114 * D[p + 2], yl = 0.299 * L[p] + 0.587 * L[p + 1] + 0.114 * L[p + 2];
+    if (yl < 60) continue;
+    const ratio = y / yl; if (ratio < 0.45 || ratio > 1.02) continue;
+    const s1 = D[p] + D[p + 1] + D[p + 2] + 1, s2 = L[p] + L[p + 1] + L[p + 2] + 1;
+    const dc = Math.abs(D[p] / s1 - L[p] / s2) + Math.abs(D[p + 1] / s1 - L[p + 1] / s2) + Math.abs(D[p + 2] / s1 - L[p + 2] / s2);
+    if (dc >= 0.06) continue;
+    A[i] = Math.round(A[i] * Math.min(1, Math.max(0, (dc - 0.02) / 0.04)));   // wall-coloured -> background
+  }
+  t.free();
+  return cleanAlpha(alpha);
 }
 
 function bodyEdge(alpha) {
@@ -380,6 +405,7 @@ export async function analyze(blob, quarterTurns = null) {
   const bgEst = estimateBackground(rgb, alpha);
   alpha = cleanEdgeAlpha(rgb, alpha, bgEst);
   alpha = removeShadows(rgb, alpha, bgEst, lm, faceW);
+  alpha = shadowRim(rgb, alpha);
   const warnings = [];
   if (k && quarterTurns === null) warnings.push(`Photo was sideways/upside-down - auto-rotated ${k * 90}°.`);
   if (n > 1) warnings.push("More than one face found - using the largest one.");
